@@ -1,38 +1,68 @@
 #include "FanController.h"
+#include <math.h>
 
-FanController::FanController(uint8_t pin) : pwmPin(pin), lastTemperature(0)
+static inline uint8_t mapValue(float x, float in_min, float in_max, uint8_t out_min, uint8_t out_max)
 {
-    pinMode(pwmPin, OUTPUT);
+    if (x <= in_min)
+        return out_min;
+    if (x >= in_max)
+        return out_max;
+    return static_cast<uint8_t>((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min);
 }
 
-void FanController::updatePWMWithHysteresis(float temperature)
+FanController::FanController(uint8_t pin) noexcept
+    : pwmPin(pin), lastTemperature(TEMP_MIN), pwmDisabled(false)
 {
-    uint8_t pwmValue;
+    DDRB |= (1 << pwmPin);
+}
 
-    if (temperature >= TEMP_MAX)
+void FanController::updatePWMWithHysteresis(float temperature) noexcept
+{
+    uint8_t newPWMValue = 0;
+
+    if (temperature < TEMP_MIN)
     {
-        pwmValue = PWM_MAX;
+        newPWMValue = 0;
     }
-    else if (temperature <= TEMP_MIN)
+    else if (temperature >= TEMP_MAX)
     {
-        pwmValue = PWM_MIN;
+        newPWMValue = PWM_MAX;
     }
     else
     {
-        if (temperature > lastTemperature + HYSTERESIS)
+        newPWMValue = mapValue(temperature, TEMP_MIN, TEMP_MAX, PWM_MIN, PWM_MAX);
+    }
+
+    if (newPWMValue > 0 && pwmDisabled)
+    {
+        initTimer0PWM();
+        DDRB |= (1 << PB0);
+        pwmDisabled = false;
+    }
+
+    if (!pwmDisabled)
+    {
+        if (fabs(temperature - lastTemperature) < HYSTERESIS && OCR0A == newPWMValue)
         {
-            pwmValue = map(temperature, TEMP_MIN, TEMP_MAX, PWM_MIN, PWM_MAX);
-        }
-        else if (temperature < lastTemperature - HYSTERESIS)
-        {
-            pwmValue = map(temperature, TEMP_MIN, TEMP_MAX, PWM_MIN, PWM_MAX);
-        }
-        else
-        {
+            lastTemperature = temperature;
             return;
         }
     }
 
-    analogWrite(pwmPin, pwmValue);
+    if (newPWMValue == 0)
+    {
+
+        if (!pwmDisabled)
+        {
+            TCCR0A &= ~(1 << COM0A1);
+            PORTB &= ~(1 << PB0);
+            pwmDisabled = true;
+        }
+    }
+    else
+    {
+        OCR0A = newPWMValue;
+    }
+
     lastTemperature = temperature;
 }

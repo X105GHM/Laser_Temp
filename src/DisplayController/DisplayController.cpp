@@ -1,40 +1,40 @@
 #include "DisplayController.h"
+#include "HelpFunctions/utils.h"
 
-DisplayController::DisplayController(uint8_t clkPin, uint8_t dioPin) : display(clkPin, dioPin)
+DisplayController::DisplayController(uint8_t clkPin, uint8_t dioPin)
+    : display(clkPin, dioPin), brightness(7)
 {
-    display.setBrightness(7);
+    display.setBrightness(brightness);
 }
 
-void DisplayController::updateDisplay(float temperature, float batteryVoltage)
+void DisplayController::updateDisplay(float temperature, float batteryVoltage, bool showTemperature)
 {
-    unsigned long currentMillis = millis();
-    if (currentMillis - lastDisplaySwitch >= displaySwitchInterval)
-    {
-        lastDisplaySwitch = currentMillis;
-        showTemperature = !showTemperature;
-    }
-
     if (showTemperature)
     {
-        display.showNumberDecEx(int(temperature * 10), 0x80, false);
+        if (my_isnan(temperature))
+        {
+            const uint8_t ErrChars[] = {0x79, 0x50, 0x50, 0x00}; // "Err"
+            display.setSegments(ErrChars);
+            return;
+        }
+        int displayValue = static_cast<int>(temperature * 100);
+        display.showNumberDec(displayValue, true);
     }
     else
     {
-        display.showNumberDec(int(batteryVoltage * 10), false);
+        if (my_isnan(batteryVoltage))
+        {
+            const uint8_t DashChars[] = {0x40, 0x40, 0x40, 0x40}; // "----"
+            display.setSegments(DashChars);
+            return;
+        }
+        int displayValue = static_cast<int>(batteryVoltage * 100);
+        display.showNumberDec(displayValue, true);
     }
 }
 
-void DisplayController::blinkDisplay(unsigned long currentMillis, unsigned long blinkInterval, bool &blinkState)
+void DisplayController::setBrightness(uint8_t newBrightness)
 {
-    if (currentMillis - lastDisplaySwitch >= blinkInterval)
-    {
-        lastDisplaySwitch = currentMillis;
-        blinkState = !blinkState;
-        display.setBrightness(blinkState ? 7 : 0);
-    }
-}
-
-void DisplayController::setBrightness(uint8_t brightness)
-{
+    brightness = newBrightness;
     display.setBrightness(brightness);
 }

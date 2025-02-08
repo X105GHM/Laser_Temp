@@ -1,22 +1,23 @@
 #ifndef DISPLAY_CONTROLLER_H
 #define DISPLAY_CONTROLLER_H
 
-#include <Arduino.h>
-#include <TM1637Display.h>
+#include <stdint.h>
+#include <TM1637TinyDisplay.h>
 
-class DisplayController
-{
+class DisplayController {
 public:
+
     DisplayController(uint8_t clkPin, uint8_t dioPin);
-    void updateDisplay(float temperature, float batteryVoltage);
-    void blinkDisplay(unsigned long currentMillis, unsigned long blinkInterval, bool &blinkState);
+
+    void updateDisplay(float temperature, float batteryVoltage, bool showTemperature);
+
     void setBrightness(uint8_t brightness);
 
+    uint8_t getBrightness() const noexcept { return brightness; }
+
 private:
-    TM1637Display display;
-    bool showTemperature = true;
-    unsigned long lastDisplaySwitch = 0;
-    constexpr static unsigned long displaySwitchInterval = 5000;
+    TM1637TinyDisplay display;
+    uint8_t brightness;
 };
 
-#endif
+#endif // DISPLAY_CONTROLLER_H

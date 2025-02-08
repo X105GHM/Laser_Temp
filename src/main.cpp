@@ -1,7 +1,15 @@
-#include <Arduino.h>
-#include <TM1637Display.h>
-#include "TemperaturSensor/TemperaturSensor.h"
+#ifndef F_CPU
+#define F_CPU 1000000UL
+#endif
+
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <util/delay.h>
+#include <TM1637TinyDisplay.h>
+#include "HelpFunctions/millis.h"
+#include "HelpFunctions/utils.h"
 #include "BatterieSensor/BatterieSensor.h"
+#include "TemperaturSensor/TemperaturSensor.h"
 #include "FanController/FanController.h"
 #include "DisplayController/DisplayController.h"
 
@@ -16,52 +24,77 @@ TemperatureSensor tempSensor(NTC_SENSOR);
 BatterySensor batterySensor(BATTERY_SENSOR);
 FanController fanController(MOSFET_PWM);
 
-unsigned long lastUpdate = 0;
-unsigned long lastActivity = 0;
-constexpr unsigned long updateInterval = 1000;
-constexpr unsigned long inactivityThreshold = 30000;
-constexpr unsigned long blinkInterval = 180;
-float lastTemperature = 0;
-float lastBatteryVoltage = 0;
-bool blinkState = false;
-constexpr float voltageThresholdLow = 22.0;
-constexpr float voltageThresholdHigh = 25.2;
+volatile bool showTemperature = true;
+volatile bool blinkState = false;
 
-void setup()
+int main(void)
 {
+  initTimer1();
+  initTimer0PWM();
+
+  ADMUX = 0;
+  ADCSRA = (1 << ADEN) | (1 << ADPS1) | (1 << ADPS0);
+
   displayController.setBrightness(7);
-}
+  displayController.updateDisplay(0.0f, 0.0f, true);
 
-void loop()
-{
-  unsigned long currentMillis = millis();
-  float batteryVoltage = batterySensor.readBatteryVoltage();
-  float temperature = tempSensor.readTemperature();
-  fanController.updatePWMWithHysteresis(temperature);
+  _delay_ms(500);
 
-  if (currentMillis - lastUpdate >= updateInterval)
+  uint32_t lastUpdate = millis();
+  uint32_t lastBlinkUpdate = millis();
+  uint32_t lastDisplayToggle = millis();
+
+  constexpr uint32_t updateInterval = 500;
+  constexpr uint32_t blinkInterval = 180;           
+  constexpr uint32_t displayToggleInterval = 10000;
+
+  constexpr float voltageThresholdHigh = 25.2f;
+  constexpr float voltageThresholdLow = 20.0f;
+
+  sei();
+
+  while (true)
   {
-    lastUpdate = currentMillis;
-    displayController.updateDisplay(temperature, batteryVoltage);
+    const uint32_t currentMillis = millis();
 
-    if (abs(temperature - lastTemperature) > 0.5 || abs(batteryVoltage - lastBatteryVoltage) > 0.1)
+    if (currentMillis - lastDisplayToggle >= displayToggleInterval)
     {
-      lastActivity = currentMillis;
+      lastDisplayToggle = currentMillis;
+      showTemperature = !showTemperature;
     }
-    lastTemperature = temperature;
-    lastBatteryVoltage = batteryVoltage;
+
+    const float batteryVoltage = batterySensor.readBatteryVoltage();
+    const float temperature = tempSensor.readTemperature();
+
+    if (currentMillis - lastUpdate >= updateInterval)
+    {
+      lastUpdate = currentMillis;
+      if (showTemperature)
+      {
+        displayController.setBrightness(1);
+      }
+      else
+      {
+        displayController.setBrightness(7);
+      }
+      displayController.updateDisplay(temperature, batteryVoltage, showTemperature);
+    }
+
+    if (!showTemperature && (batteryVoltage > voltageThresholdHigh || batteryVoltage < voltageThresholdLow))
+    {
+      if (currentMillis - lastBlinkUpdate >= blinkInterval)
+      {
+        lastBlinkUpdate = currentMillis;
+        blinkState = !blinkState;
+        displayController.setBrightness(blinkState ? 0 : 7);
+      }
+    }
+    else if (!showTemperature)
+    {
+      displayController.setBrightness(7);
+    }
+    fanController.updatePWMWithHysteresis(temperature);
   }
 
-  if (batteryVoltage < voltageThresholdLow || batteryVoltage > voltageThresholdHigh)
-  {
-    displayController.blinkDisplay(currentMillis, blinkInterval, blinkState);
-  }
-  else if (currentMillis - lastActivity > inactivityThreshold)
-  {
-    displayController.setBrightness(1);
-  }
-  else
-  {
-    displayController.setBrightness(7);
-  }
+  return 0;
 }
