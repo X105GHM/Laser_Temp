@@ -7,9 +7,7 @@ uint16_t readADC(uint8_t channel)
     _delay_us(100);
 
     ADCSRA |= (1 << ADSC);
-    while (ADCSRA & (1 << ADSC))
-        ;
-
+    while (ADCSRA & (1 << ADSC));
     uint8_t low = ADCL;
     uint8_t high = ADCH;
     return (static_cast<uint16_t>(high) << 8) | low;

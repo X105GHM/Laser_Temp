@@ -1,25 +1,21 @@
 #include "FanController.h"
 #include <math.h>
 
-static inline uint8_t mapValue(float x, float in_min, float in_max, uint8_t out_min, uint8_t out_max)
-{
-    if (x <= in_min)
-        return out_min;
-    if (x >= in_max)
-        return out_max;
-    return static_cast<uint8_t>((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min);
-}
-
 FanController::FanController(uint8_t pin) noexcept
-    : pwmPin(pin), lastTemperature(TEMP_MIN), pwmDisabled(false)
+    : pwmPin(pin), lastTemperature(TEMP_MIN), pwmDisabled(true)
 {
     DDRB |= (1 << pwmPin);
 }
 
 void FanController::updatePWMWithHysteresis(float temperature) noexcept
 {
-    uint8_t newPWMValue = 0;
+    if (isnan(temperature))
+    {
+        return;
+    }
 
+    uint8_t newPWMValue = 0;
+    
     if (temperature < TEMP_MIN)
     {
         newPWMValue = 0;
@@ -33,25 +29,24 @@ void FanController::updatePWMWithHysteresis(float temperature) noexcept
         newPWMValue = mapValue(temperature, TEMP_MIN, TEMP_MAX, PWM_MIN, PWM_MAX);
     }
 
-    if (newPWMValue > 0 && pwmDisabled)
+    if (!pwmDisabled && (fabs(temperature - lastTemperature) < HYSTERESIS) && (OCR0A == newPWMValue))
     {
-        initTimer0PWM();
-        DDRB |= (1 << PB0);
-        pwmDisabled = false;
+        lastTemperature = temperature;
+        return;
     }
 
-    if (!pwmDisabled)
+    if (newPWMValue > 0)
     {
-        if (fabs(temperature - lastTemperature) < HYSTERESIS && OCR0A == newPWMValue)
+        if (pwmDisabled)
         {
-            lastTemperature = temperature;
-            return;
+            initTimer0PWM();
+            DDRB |= (1 << PB0);
+            pwmDisabled = false;
         }
+        OCR0A = newPWMValue;
     }
-
-    if (newPWMValue == 0)
+    else
     {
-
         if (!pwmDisabled)
         {
             TCCR0A &= ~(1 << COM0A1);
@@ -59,10 +54,5 @@ void FanController::updatePWMWithHysteresis(float temperature) noexcept
             pwmDisabled = true;
         }
     }
-    else
-    {
-        OCR0A = newPWMValue;
-    }
-
     lastTemperature = temperature;
 }
